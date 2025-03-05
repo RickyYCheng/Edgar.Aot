@@ -23,8 +23,7 @@ namespace Edgar.GraphBasedGenerator.Grid2D
         /// <param name="roomTemplates">See the <see cref="RoomTemplates"/> property.</param>
         public RoomDescriptionGrid2D(bool isCorridor, List<RoomTemplateGrid2D> roomTemplates)
         {
-            if (roomTemplates == null) 
-                throw new ArgumentNullException(nameof(roomTemplates));
+            ArgumentNullException.ThrowIfNull(roomTemplates);
 
             if (roomTemplates.Count == 0)
                 throw new ArgumentException("Value cannot be an empty collection.", nameof(roomTemplates));

@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using Edgar.GraphBasedGenerator.Common.ChainDecomposition;
 using Edgar.Legacy.Core.ChainDecompositions;
 using Edgar.Legacy.Core.LayoutGenerators.DungeonGenerator;
 using Edgar.Legacy.Core.MapDescriptions;
@@ -6,7 +7,8 @@ using Edgar.Legacy.Utils.Interfaces;
 
 namespace Edgar.GraphBasedGenerator.Common
 {
-    public class GraphBasedGeneratorConfiguration<TNode> : DungeonGeneratorConfiguration<TNode>, ISmartCloneable<GraphBasedGeneratorConfiguration<TNode>>
+    public class GraphBasedGeneratorConfiguration<TNode> : DungeonGeneratorConfiguration<TNode>,
+        ISmartCloneable<GraphBasedGeneratorConfiguration<TNode>>
     {
         public bool OptimizeCorridorConstraints { get; set; }
 

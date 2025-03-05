@@ -1,9 +1,6 @@
 ﻿using System.Collections.Generic;
-using System.IO;
 using Edgar.GraphBasedGenerator.Common;
 using Edgar.Utils;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Edgar.GraphBasedGenerator.Grid2D
 {
@@ -11,13 +8,8 @@ namespace Edgar.GraphBasedGenerator.Grid2D
     /// Describes the structure of a level on the 2D (integer) grid.
     /// </summary>
     /// <typeparam name="TRoom"></typeparam>
-    public class LevelDescriptionGrid2D<TRoom> : LevelDescription<TRoom, RoomDescriptionGrid2D>
+    public class LevelDescriptionGrid2D<TRoom> : LevelDescriptionBase<TRoom, RoomDescriptionGrid2D>
     {
-        /// <summary>
-        /// Name of the level description. Optional. Used mainly for debugging purposes.
-        /// </summary>
-        public string Name { get; set; }
-
         /// <summary>
         /// Minimum distance of individual rooms. Must be a non-negative number. Defaults to 0.
         /// </summary>
@@ -26,6 +18,12 @@ namespace Edgar.GraphBasedGenerator.Grid2D
         /// n > 0 - the manhattan distance of 2 outline points of different rooms must be at least n.
         /// </remarks>
         public int MinimumRoomDistance { get; set; } = 0;
+
+        // TODO: remove
+        public List<List<TRoom>> Clusters { get; set; }
+
+        // TODO: comment
+        public List<IGeneratorConstraintGrid2D<TRoom>> Constraints { get; set; }
 
         /// <summary>
         /// Default room template repeat mode that is used if there is no repeat mode specified on the room template itself.
@@ -42,25 +40,5 @@ namespace Edgar.GraphBasedGenerator.Grid2D
         /// Defaults to null.
         /// </remarks>
         public RoomTemplateRepeatMode? RoomTemplateRepeatModeOverride { get; set; }
-
-        /// <summary>
-        /// Saves the level description as a JSON file.
-        /// </summary>
-        /// <param name="filename">Path to the JSON file.</param>
-        /// <param name="preserveReferences">Whether to preserve references to objects. The value should be true if the level description should be used later to generate a level.</param>
-        public void SaveToJson(string filename, bool preserveReferences = true)
-        {
-            JsonUtils.SaveToFile(this, filename, preserveReferences);
-        }
-
-        /// <summary>
-        /// Loads a level description from a given JSON file.
-        /// </summary>
-        /// <param name="filename">Path to the JSON file.</param>
-        /// <returns></returns>
-        public static LevelDescriptionGrid2D<TRoom> LoadFromJson(string filename)
-        {
-            return JsonUtils.LoadFromFile<LevelDescriptionGrid2D<TRoom>>(filename);
-        }
     }
 }

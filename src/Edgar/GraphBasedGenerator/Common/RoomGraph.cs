@@ -21,7 +21,6 @@ namespace Edgar.GraphBasedGenerator.Common
 
         private void Initialize(IGraph<RoomNode<TRoom>> originalGraph)
         {
-
         }
 
         public void AddVertex(RoomNode<TRoom> vertex)
@@ -32,6 +31,11 @@ namespace Edgar.GraphBasedGenerator.Common
         public void AddEdge(RoomNode<TRoom> from, RoomNode<TRoom> to)
         {
             throw new NotSupportedException("The graph cannot be modified once constructed");
+        }
+
+        public IEnumerable<RoomNode<TRoom>> GetNeighbors(RoomNode<TRoom> vertex)
+        {
+            throw new NotImplementedException();
         }
 
         public IEnumerable<RoomNode<TRoom>> GetNeighbours(RoomNode<TRoom> vertex)

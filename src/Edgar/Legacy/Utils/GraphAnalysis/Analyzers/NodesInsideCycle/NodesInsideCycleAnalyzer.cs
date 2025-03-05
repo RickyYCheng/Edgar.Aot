@@ -54,10 +54,10 @@ namespace Edgar.Legacy.Utils.GraphAnalysis.Analyzers.NodesInsideCycle
         {
             var startingNodes = new List<TNode>();
             var nonCycleNodes = new List<TNode>();
-            
+
             foreach (var node in nodes)
             {
-                var neighbors = graph.GetNeighbours(node).ToList();
+                var neighbors = graph.GetNeighbors(node).ToList();
 
                 // We need only nodes that are not on the border
                 if (neighbors.Intersect(nodes).Count() < 2)
@@ -79,7 +79,7 @@ namespace Edgar.Legacy.Utils.GraphAnalysis.Analyzers.NodesInsideCycle
             {
                 var node = buffer.Pop();
 
-                foreach (var neighbor in graph.GetNeighbours(node))
+                foreach (var neighbor in graph.GetNeighbors(node))
                 {
                     if (!nodes.Contains(neighbor) && !nonCycleNodes.Contains(neighbor))
                     {

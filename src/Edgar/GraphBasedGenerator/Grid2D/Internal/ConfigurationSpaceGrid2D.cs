@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using Edgar.Geometry;
 using Edgar.GraphBasedGenerator.Common.ConfigurationSpaces;
@@ -12,21 +13,18 @@ namespace Edgar.GraphBasedGenerator.Grid2D.Internal
     {
         private readonly List<OrthogonalLineGrid2D> lines;
 
-        public IReadOnlyList<OrthogonalLineGrid2D> Lines { get; }
+        public ImmutableArray<OrthogonalLineGrid2D> Lines { get; }
 
-        private readonly List<Tuple<OrthogonalLineGrid2D, DoorLineGrid2D>> reverseDoors;
+        public IReadOnlyList<ConfigurationSpaceSourceGrid2D> ReverseDoors { get; }
 
-        public IReadOnlyList<Tuple<OrthogonalLineGrid2D, DoorLineGrid2D>> ReverseDoors { get; }
-
-        public ConfigurationSpaceGrid2D(List<OrthogonalLineGrid2D> lines, List<Tuple<OrthogonalLineGrid2D, DoorLineGrid2D>> reverseDoors = null)
+        public ConfigurationSpaceGrid2D(List<OrthogonalLineGrid2D> lines,
+            List<ConfigurationSpaceSourceGrid2D> reverseDoors = null)
         {
             this.lines = lines;
-            this.reverseDoors = reverseDoors;
-            Lines = lines.AsReadOnly();
+            Lines = ImmutableArray.CreateRange(lines);
 
             if (reverseDoors != null)
             {
-                this.reverseDoors = reverseDoors;
                 ReverseDoors = reverseDoors.AsReadOnly();
             }
         }
@@ -51,7 +49,8 @@ namespace Edgar.GraphBasedGenerator.Grid2D.Internal
 
                     for (var i = 0; i < maxPointsPerLine; i++)
                     {
-                        var position = intersectionLine.GetNthPoint(i != maxPointsPerLine - 1 ? i * mod : intersectionLine.Length);
+                        var position =
+                            intersectionLine.GetNthPoint(i != maxPointsPerLine - 1 ? i * mod : intersectionLine.Length);
                         yield return position;
                     }
                 }

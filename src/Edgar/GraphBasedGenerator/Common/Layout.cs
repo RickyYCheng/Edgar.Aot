@@ -5,8 +5,9 @@ using Edgar.Legacy.Utils.Interfaces;
 
 namespace Edgar.GraphBasedGenerator.Common
 {
-    public class Layout<TRoom, TConfiguration> : ILayout<RoomNode<TRoom>, TConfiguration>, ISmartCloneable<Layout<TRoom, TConfiguration>>
-        where TConfiguration: ISmartCloneable<TConfiguration>
+    public class Layout<TRoom, TConfiguration> : ILayout<RoomNode<TRoom>, TConfiguration>,
+        ISmartCloneable<Layout<TRoom, TConfiguration>>
+        where TConfiguration : ISmartCloneable<TConfiguration>
     {
         private readonly TConfiguration[] vertices;
         private readonly bool[] hasValue;
@@ -19,7 +20,16 @@ namespace Edgar.GraphBasedGenerator.Common
         /// <param name="graph"></param>
         public Layout(IGraph<RoomNode<TRoom>> graph)
         {
-            Graph = graph;
+            if (graph is UndirectedImmutableGraph<RoomNode<TRoom>>)
+            {
+                Graph = graph;
+            }
+            else
+            {
+                Graph = graph;
+                Graph = new UndirectedImmutableGraph<RoomNode<TRoom>>(graph);
+            }
+
             vertices = new TConfiguration[Graph.VerticesCount];
             hasValue = new bool[Graph.VerticesCount];
         }

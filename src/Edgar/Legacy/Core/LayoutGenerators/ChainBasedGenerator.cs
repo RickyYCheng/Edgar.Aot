@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using Edgar.GraphBasedGenerator.Common.ChainDecomposition;
 using Edgar.Legacy.Core.ChainDecompositions;
 using Edgar.Legacy.Core.GeneratorPlanners.Interfaces;
 using Edgar.Legacy.Core.LayoutConverters.Interfaces;
@@ -18,7 +19,7 @@ namespace Edgar.Legacy.Core.LayoutGenerators
     /// <typeparam name="TLayout"></typeparam>
     /// <typeparam name="TOutputLayout"></typeparam>
     /// <typeparam name="TNode"></typeparam>
-    public class ChainBasedGenerator<TLayout, TOutputLayout, TNode> : IBenchmarkableLayoutGenerator<TOutputLayout>, IRandomInjectable, ICancellable
+    public class ChainBasedGenerator<TLayout, TOutputLayout, TNode> : IRandomInjectable, ICancellable
     {
         private readonly TLayout initialLayout;
         private readonly IGeneratorPlanner<TLayout, TNode> generatorPlanner;
@@ -29,10 +30,12 @@ namespace Edgar.Legacy.Core.LayoutGenerators
         protected Random Random = new Random();
         protected CancellationToken? CancellationToken;
 
-        public event Action<Random> OnRandomInjected; 
-        public event Action<CancellationToken> OnCancellationTokenInjected; 
+        public event Action<Random> OnRandomInjected;
+        public event Action<CancellationToken> OnCancellationTokenInjected;
 
-        public ChainBasedGenerator(TLayout initialLayout, IGeneratorPlanner<TLayout, TNode> generatorPlanner, List<Chain<TNode>> chains, ILayoutEvolver<TLayout, TNode> layoutEvolver, ILayoutConverter<TLayout, TOutputLayout> layoutConverter)
+        public ChainBasedGenerator(TLayout initialLayout, IGeneratorPlanner<TLayout, TNode> generatorPlanner,
+            List<Chain<TNode>> chains, ILayoutEvolver<TLayout, TNode> layoutEvolver,
+            ILayoutConverter<TLayout, TOutputLayout> layoutConverter)
         {
             this.initialLayout = initialLayout;
             this.generatorPlanner = generatorPlanner;
@@ -94,7 +97,6 @@ namespace Edgar.Legacy.Core.LayoutGenerators
 
         public void EnableBenchmark(bool enable)
         {
-            
         }
 
         /// <summary>

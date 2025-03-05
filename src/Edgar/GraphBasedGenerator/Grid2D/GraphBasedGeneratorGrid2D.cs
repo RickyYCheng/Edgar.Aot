@@ -5,24 +5,17 @@ using System.Threading;
 using Edgar.Geometry;
 using Edgar.GraphBasedGenerator.Common;
 using Edgar.GraphBasedGenerator.Common.Configurations;
-using Edgar.GraphBasedGenerator.Common.Constraints;
-using Edgar.GraphBasedGenerator.Common.Constraints.BasicConstraint;
-using Edgar.GraphBasedGenerator.Common.Constraints.CorridorConstraint;
-using Edgar.GraphBasedGenerator.Common.Constraints.MinimumDistanceConstraint;
+using Edgar.GraphBasedGenerator.Common.Constraints.FixedConfigurationConstraint;
+using Edgar.GraphBasedGenerator.Common.Doors;
+using Edgar.GraphBasedGenerator.Common.LayoutControllers;
 using Edgar.GraphBasedGenerator.Grid2D.Internal;
-using Edgar.Legacy.Core.ChainDecompositions;
-using Edgar.Legacy.Core.ConfigurationSpaces;
-using Edgar.Legacy.Core.Constraints.Interfaces;
 using Edgar.Legacy.Core.Doors;
 using Edgar.Legacy.Core.GeneratorPlanners;
 using Edgar.Legacy.Core.LayoutEvolvers.SimulatedAnnealing;
 using Edgar.Legacy.Core.LayoutGenerators;
 using Edgar.Legacy.Core.LayoutGenerators.Interfaces;
-using Edgar.Legacy.Core.Layouts.Interfaces;
 using Edgar.Legacy.GeneralAlgorithms.Algorithms.Common;
 using Edgar.Legacy.GeneralAlgorithms.Algorithms.Polygons;
-using Edgar.Legacy.GeneralAlgorithms.DataStructures.Common;
-using Edgar.Legacy.Utils;
 using Edgar.Legacy.Utils.Interfaces;
 using ConfigurationSpacesGenerator = Edgar.GraphBasedGenerator.Grid2D.Internal.ConfigurationSpacesGenerator;
 
@@ -31,13 +24,16 @@ namespace Edgar.GraphBasedGenerator.Grid2D
     /// <summary>
     /// Implements a graph-based layout generator that works on the 2D (integer) grid.
     /// </summary>
-    public class GraphBasedGeneratorGrid2D<TRoom> : IRandomInjectable, ICancellable, IObservableGenerator<LayoutGrid2D<TRoom>>
+    public class GraphBasedGeneratorGrid2D<TRoom> : IRandomInjectable, ICancellable,
+        IObservableGenerator<LayoutGrid2D<TRoom>>
     {
         private readonly LevelDescriptionMapping<TRoom> levelDescriptionMapped;
         private readonly LevelDescriptionGrid2D<TRoom> levelDescription;
         private readonly GraphBasedGeneratorConfiguration<TRoom> configuration;
-        private ChainBasedGenerator<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>, LayoutGrid2D<TRoom>, RoomNode<TRoom>> generator;
-        
+
+        private ChainBasedGenerator<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>, LayoutGrid2D<TRoom>,
+            RoomNode<TRoom>> generator;
+
         // Exists because OnPerturbed converts layouts which uses the Random instance and causes results to be different.
         private event Action<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>> OnPerturbedInternal;
 
@@ -46,7 +42,8 @@ namespace Edgar.GraphBasedGenerator.Grid2D
         /// </summary>
         /// <param name="levelDescription">Level description of the level that should be generated.</param>
         /// <param name="configuration">Configuration of the generator. Can be omitted for reasonable defaults.</param>
-        public GraphBasedGeneratorGrid2D(LevelDescriptionGrid2D<TRoom> levelDescription, GraphBasedGeneratorConfiguration<TRoom> configuration = null)
+        public GraphBasedGeneratorGrid2D(LevelDescriptionGrid2D<TRoom> levelDescription,
+            GraphBasedGeneratorConfiguration<TRoom> configuration = null)
         {
             this.levelDescription = levelDescription;
             this.levelDescriptionMapped = new LevelDescriptionMapping<TRoom>(levelDescription);
@@ -55,9 +52,9 @@ namespace Edgar.GraphBasedGenerator.Grid2D
         }
 
         /// <summary>
-        /// Total time to generate a level.
+        /// Number of milliseconds needed to generate the last level.
         /// </summary>
-        public double TimeTotal => generator.TimeTotal;
+        public long TimeTotal => generator.TimeTotal;
 
         /// <summary>
         /// Number of iterations needed to generate the last level.
@@ -66,189 +63,235 @@ namespace Edgar.GraphBasedGenerator.Grid2D
 
         private void SetupGenerator()
         {
-            var mapping = levelDescriptionMapped.GetMapping();
-            var chainsGeneric = configuration.Chains;
+            var roomToAliasMapping = levelDescriptionMapped.GetMapping();
 
-            // Create chain decomposition
-            if (chainsGeneric == null)
-            {
-                var chainDecomposition = new Common.TwoStageChainDecomposition<TRoom>(levelDescription, new BreadthFirstChainDecomposition<TRoom>(configuration.ChainDecompositionConfiguration ?? new ChainDecompositionConfiguration()));
-                chainsGeneric = chainDecomposition.GetChains(levelDescription.GetGraph());
-            }
-
-            var chains = chainsGeneric
-                .Select(x => new Chain<RoomNode<TRoom>>(x.Nodes.Select(y => mapping[y]).ToList(), x.Number) { IsFromFace = x.IsFromFace })
-                .ToList();
-
-            // Create generator planner
-            var generatorPlanner = new GeneratorPlanner<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>, RoomNode<TRoom>>(configuration.SimulatedAnnealingMaxBranching);
-
-            // Create configuration spaces
+            // Create configuration spaces generator
             var configurationSpacesGenerator = new ConfigurationSpacesGenerator(
                 new PolygonOverlap(),
                 DoorHandler.DefaultHandler,
                 new OrthogonalLineIntersection(),
                 new GridPolygonUtils());
 
-            // var configurationSpaces = configurationSpacesGenerator.GetConfigurationSpaces<ConfigurationNew2<CorridorsDataNew>>(mapDescription);
-            var simpleConfigurationSpaces = new ConfigurationSpacesGrid2D<ConfigurationGrid2D<TRoom, EnergyData>, RoomNode<TRoom>>(levelDescriptionMapped);
-
-            // Needlessly complex for backwards compatibility
-
-            #region IntAliasMapping
-
-            var roomDescriptions = levelDescriptionMapped.GetGraph().Vertices.ToDictionary(x => x, x => (RoomDescriptionGrid2D) levelDescriptionMapped.GetRoomDescription(x));
-            var roomTemplates = roomDescriptions.Values.SelectMany(x => x.RoomTemplates).Distinct().ToList();
-            var roomTemplateInstances = roomTemplates.ToDictionary(x => x, configurationSpacesGenerator.GetRoomTemplateInstances);
-            var roomTemplateInstancesMapping = roomTemplateInstances.SelectMany(x => x.Value).CreateIntMapping();
-            var intAliasMapping = new TwoWayDictionary<RoomTemplateInstanceGrid2D, IntAlias<PolygonGrid2D>>();
-
-            foreach (var shape1 in roomTemplateInstancesMapping.Keys)
-            {
-                foreach (var shape2 in roomTemplateInstancesMapping.Keys)
-                {
-                    if (!intAliasMapping.ContainsKey(shape1))
-                    {
-                        var newAlias = new IntAlias<PolygonGrid2D>(intAliasMapping.Count, shape1.RoomShape); 
-                        intAliasMapping.Add(shape1, newAlias);
-                        shape1.RoomShapeAlias = newAlias;
-                    }
-                    if (!intAliasMapping.ContainsKey(shape2))
-                    {
-                        var newAlias = new IntAlias<PolygonGrid2D>(intAliasMapping.Count, shape2.RoomShape); 
-                        intAliasMapping.Add(shape2, newAlias);
-                        shape2.RoomShapeAlias = newAlias;
-                    }
-                }
-            }
-
-            // TODO: remove when possible
-            foreach (var pair in intAliasMapping)
-            {
-                pair.Key.RoomShapeAlias = pair.Value;
-            }
-
-            var shapesForNodes = new Dictionary<RoomNode<TRoom>, List<WeightedShape>>();
-            foreach (var vertex in levelDescriptionMapped.GetGraph().Vertices)
-            {
-                shapesForNodes.Add(vertex, new List<WeightedShape>());
-                // var roomDescription = levelDescriptionMapped.GetRoomDescription(vertex);
-                var roomDescription = roomDescriptions[vertex];
-
-                foreach (var roomTemplate in roomDescription.RoomTemplates)
-                {
-                    var instances = roomTemplateInstances[roomTemplate];
-
-                    foreach (var roomTemplateInstance in instances)
-                    {
-                        shapesForNodes[vertex].Add(new WeightedShape(intAliasMapping[roomTemplateInstance], 1d / instances.Count));
-                    }
-                }
-            }
-
-            var usedShapes = new HashSet<int>();
-            var allShapes = new List<IntAlias<PolygonGrid2D>>();
-            foreach (var vertex in levelDescriptionMapped.GetGraph().Vertices)
-            {
-                var shapes = shapesForNodes[vertex];
-
-                foreach (var shape in shapes)
-                {
-                    if (!usedShapes.Contains(shape.Shape.Alias))
-                    {
-                        allShapes.Add(shape.Shape);
-                        usedShapes.Add(shape.Shape.Alias);
-                    }
-                }
-            }
-
-            var averageSize = (int) allShapes.Select(x => x.Value.BoundingRectangle).Average(x => (x.Width + x.Height) / 2);
-
-            #endregion
-
-
-
-            // var averageSize = configurationSpaces.GetAverageSize();
-
-            var energyUpdater = new BasicEnergyUpdater<RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>>(10 * averageSize);
-            var roomShapeGeometry = new FastGridPolygonGeometry<ConfigurationGrid2D<TRoom, EnergyData>, RoomNode<TRoom>>();
-
-            // Create generator constraints
-            var stageOneConstraints =
-                new List<INodeConstraint<ILayout<RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>>, RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>,
-                    EnergyData>>
-                {
-                    new BasicConstraint<RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>, EnergyData>(
-                        roomShapeGeometry,
-                        simpleConfigurationSpaces,
-                        levelDescriptionMapped,
-                        configuration.OptimizeCorridorConstraints
-                    ),
-                    new CorridorConstraint<RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>, EnergyData>(
-                        levelDescriptionMapped,
-                        simpleConfigurationSpaces,
-                        roomShapeGeometry
-                    ),
-                };
-
-            if (levelDescription.MinimumRoomDistance > 0)
-            {
-                stageOneConstraints.Add(new MinimumDistanceConstraint<RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>, EnergyData>(
-                    levelDescriptionMapped,
-                    roomShapeGeometry,
-                    levelDescription.MinimumRoomDistance
-                ));
-            }
-
-            var constraintsEvaluator = new ConstraintsEvaluator<RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>, EnergyData>(stageOneConstraints, energyUpdater);
-
-            var roomShapesHandler = new RoomShapesHandlerGrid2D<RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>>(
-                intAliasMapping,
+            // Preprocess information about room templates
+            var geometryData = LevelGeometryData<RoomNode<TRoom>>.CreateBackwardsCompatible(
                 levelDescriptionMapped,
-                shapesForNodes,
-                levelDescription.RoomTemplateRepeatModeOverride,
-                levelDescription.RoomTemplateRepeatModeDefault
+                configurationSpacesGenerator.GetRoomTemplateInstances
             );
 
-            // Create layout operations
-            var layoutOperations = new LayoutController<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>, RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>, RoomTemplateInstanceGrid2D, EnergyData>(averageSize, levelDescriptionMapped, constraintsEvaluator, roomShapesHandler, configuration.ThrowIfRepeatModeNotSatisfied, simpleConfigurationSpaces, roomShapeGeometry);
+            // Compute which rooms have fixed configurations
+            var fixedConfigurationConstraint =
+                GetFixedConfigurationConstraint(levelDescription.Constraints, geometryData.RoomTemplateInstances);
 
-            var initialLayout = new Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>(levelDescriptionMapped.GetGraph());
+            // Get chain decomposition algorithm
+            var chainDecomposition = GraphBasedGeneratorGrid2DUtils.GetChainDecomposition(levelDescriptionMapped,
+                fixedConfigurationConstraint, configuration.ChainDecompositionConfiguration);
+
+            // Make sure that there is at least a single room in the level description
+            if (levelDescription.GetGraph().VerticesCount == 0)
+            {
+                throw new InvalidOperationException(
+                    "There must be at least a single room in a given level description.");
+            }
+
+            // Compute chains
+            var chains = GraphBasedGeneratorUtils.GetChains(
+                chainDecomposition,
+                levelDescriptionMapped.GetGraph(),
+                roomToAliasMapping,
+                configuration.Chains
+            );
+
+            // Find out which rooms are not included in any chain
+            // Such rooms must have both fixed shapes and position
+            // Set these configurations accordingly in the initial layout
+            var chainsSet = chains.SelectMany(x => x.Nodes).ToHashSet();
+            var roomsWithoutChain = levelDescriptionMapped
+                .GetGraph()
+                .Vertices
+                .Where(x => !chainsSet.Contains(x))
+                .ToList();
+            var initialLayout =
+                new Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>(levelDescriptionMapped.GetGraph());
+            foreach (var room in roomsWithoutChain)
+            {
+                initialLayout.SetConfiguration(room, new ConfigurationGrid2D<TRoom, EnergyData>()
+                {
+                    Position = fixedConfigurationConstraint.GetFixedPosition(room),
+                    RoomShape = fixedConfigurationConstraint.GetFixeShape(room),
+                    Room = room,
+                    EnergyData = new EnergyData(),
+                });
+            }
+
+            // Create generator planner
+            var generatorPlanner =
+                new GeneratorPlanner<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>, RoomNode<TRoom>>(
+                    configuration.SimulatedAnnealingMaxBranching);
+
+            // The graph is directed if any of the doors is not Undirected
+            var isGraphDirected = geometryData.RoomTemplateInstances
+                .Values
+                .SelectMany(x => x)
+                .SelectMany(x => x.DoorLines)
+                .Any(x => x.Type != DoorType.Undirected);
+
+
+            var shapesForNodes =
+                GraphBasedGeneratorGrid2DUtils.GetLegacyShapesForNodes(levelDescriptionMapped, geometryData);
+
+            var averageRoomSize =
+                GraphBasedGeneratorGrid2DUtils.GetLegacyAverageSize(levelDescriptionMapped, shapesForNodes);
+
+
+            var configurationSpaces =
+                new ConfigurationSpacesGrid2D<ConfigurationGrid2D<TRoom, EnergyData>, RoomNode<TRoom>>(
+                    levelDescriptionMapped, null, isGraphDirected);
+
+            var roomShapeGeometry =
+                new FastGridPolygonGeometry<ConfigurationGrid2D<TRoom, EnergyData>, RoomNode<TRoom>>();
+
+            var constraintsEvaluator = GraphBasedGeneratorGrid2DUtils.GetConstraintsEvaluator(levelDescriptionMapped,
+                roomShapeGeometry, configurationSpaces, averageRoomSize, levelDescription.MinimumRoomDistance,
+                configuration.OptimizeCorridorConstraints);
+
+            var roomShapesHandler =
+                new RoomShapesHandlerGrid2D<RoomNode<TRoom>, ConfigurationGrid2D<TRoom, EnergyData>>(
+                    geometryData.RoomTemplateInstanceToPolygonMapping,
+                    levelDescriptionMapped,
+                    shapesForNodes,
+                    levelDescription.RoomTemplateRepeatModeOverride,
+                    levelDescription.RoomTemplateRepeatModeDefault
+                );
+
+            // Create layout operations
+            var layoutOperations =
+                new LayoutController<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>, RoomNode<TRoom>,
+                    ConfigurationGrid2D<TRoom, EnergyData>, RoomTemplateInstanceGrid2D, EnergyData>(averageRoomSize,
+                    levelDescriptionMapped, constraintsEvaluator, roomShapesHandler,
+                    configuration.ThrowIfRepeatModeNotSatisfied, configurationSpaces, roomShapeGeometry,
+                    fixedConfigurationConstraint);
+
+
             var layoutConverter =
                 new BasicLayoutConverterGrid2D<TRoom,
-                    ConfigurationGrid2D<TRoom, EnergyData>>(levelDescription, simpleConfigurationSpaces,
-                    intAliasMapping);
+                    ConfigurationGrid2D<TRoom, EnergyData>>(levelDescription, configurationSpaces,
+                    geometryData.RoomTemplateInstanceToPolygonMapping);
 
             // Create simulated annealing evolver
             var layoutEvolver =
-                    new Common.SimulatedAnnealingEvolver<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>, RoomNode<TRoom>,
-                    ConfigurationGrid2D<TRoom, EnergyData>>(layoutOperations, configuration.SimulatedAnnealingConfiguration, true);
+                new Common.SimulatedAnnealingEvolver<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>,
+                    RoomNode<TRoom>,
+                    ConfigurationGrid2D<TRoom, EnergyData>>(layoutOperations,
+                    configuration.SimulatedAnnealingConfiguration, true);
 
             // Create the generator itself
-            generator = new ChainBasedGenerator<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>, LayoutGrid2D<TRoom>, RoomNode<TRoom>>(initialLayout, generatorPlanner, chains, layoutEvolver, layoutConverter);
+            generator =
+                new ChainBasedGenerator<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>, LayoutGrid2D<TRoom>,
+                    RoomNode<TRoom>>(initialLayout, generatorPlanner, chains, layoutEvolver, layoutConverter);
 
             // Register event handlers
             generator.OnRandomInjected += (random) =>
             {
                 // ((IRandomInjectable)configurationSpaces).InjectRandomGenerator(random);
-                ((IRandomInjectable)layoutOperations).InjectRandomGenerator(random);
-                ((IRandomInjectable)layoutEvolver).InjectRandomGenerator(random);
-                ((IRandomInjectable)layoutConverter).InjectRandomGenerator(random);
-                ((IRandomInjectable)simpleConfigurationSpaces).InjectRandomGenerator(random);
-                ((IRandomInjectable)roomShapesHandler).InjectRandomGenerator(random);
+                ((IRandomInjectable) layoutOperations).InjectRandomGenerator(random);
+                ((IRandomInjectable) layoutEvolver).InjectRandomGenerator(random);
+                ((IRandomInjectable) layoutConverter).InjectRandomGenerator(random);
+                ((IRandomInjectable) configurationSpaces).InjectRandomGenerator(random);
+                ((IRandomInjectable) roomShapesHandler).InjectRandomGenerator(random);
             };
 
             generator.OnCancellationTokenInjected += (token) =>
             {
-                ((ICancellable)generatorPlanner).SetCancellationToken(token);
-                ((ICancellable)layoutEvolver).SetCancellationToken(token);
+                ((ICancellable) generatorPlanner).SetCancellationToken(token);
+                ((ICancellable) layoutEvolver).SetCancellationToken(token);
             };
-            
+
             layoutEvolver.OnEvent += (sender, args) => OnSimulatedAnnealingEvent?.Invoke(sender, args);
-            layoutEvolver.OnPerturbed += (sender, layout) => OnPerturbed?.Invoke(layoutConverter.Convert(layout, false));
+            layoutEvolver.OnPerturbed +=
+                (sender, layout) => OnPerturbed?.Invoke(layoutConverter.Convert(layout, false));
             layoutEvolver.OnPerturbed += (sender, layout) => OnPerturbedInternal?.Invoke(layout);
             layoutEvolver.OnValid += (sender, layout) => OnPartialValid?.Invoke(layoutConverter.Convert(layout, true));
             generatorPlanner.OnLayoutGenerated += layout => OnValid?.Invoke(layoutConverter.Convert(layout, true));
+        }
+
+        private FixedConfigurationConstraint<RoomTemplateInstanceGrid2D, Vector2Int, TRoom>
+            GetFixedConfigurationConstraint(List<IGeneratorConstraintGrid2D<TRoom>> constraints,
+                Dictionary<RoomTemplateGrid2D, List<RoomTemplateInstanceGrid2D>> roomTemplateInstancesMapping)
+        {
+            var fixedPositions = new Dictionary<RoomNode<TRoom>, Vector2Int>();
+            var fixedShapes = new Dictionary<RoomNode<TRoom>, RoomTemplateInstanceGrid2D>();
+            var mapping = levelDescriptionMapped.GetMapping();
+
+            // TODO: check for duplicate room constraints
+            if (constraints != null)
+            {
+                foreach (var constraintData in constraints)
+                {
+                    if (constraintData is FixedConfigurationConstraint<TRoom> fixedConfigurationConstraint)
+                    {
+                        if (!mapping.TryGetValue(fixedConfigurationConstraint.Room, out var roomNode))
+                        {
+                            throw new InvalidOperationException(
+                                $"FixedConfigurationConstraint contained a room that is not present in the level description. The room was: {fixedConfigurationConstraint.Room}");
+                        }
+
+                        // TODO: should it be possible to lock the position without locking the shape?
+                        //if (fixedConfigurationConstraint.Position.HasValue)
+                        //{
+                        //    fixedPositions[roomNode] = fixedConfigurationConstraint.Position.Value;
+                        //}
+
+                        // TODO: check for not existing room template instance
+                        if (fixedConfigurationConstraint.RoomTemplate != null)
+                        {
+                            // TODO: handle transformations
+                            // TODO: handle transformation not exists
+                            var roomTemplateInstance =
+                                roomTemplateInstancesMapping[fixedConfigurationConstraint.RoomTemplate].Single(x =>
+                                    x.Transformations.Contains(fixedConfigurationConstraint.Transformation));
+
+                            fixedShapes[roomNode] = roomTemplateInstance;
+
+                            if (fixedConfigurationConstraint.Position.HasValue)
+                            {
+                                var transformedShape =
+                                    roomTemplateInstance.RoomTemplate.Outline.Transform(fixedConfigurationConstraint
+                                        .Transformation);
+                                var offset = roomTemplateInstance.RoomShape.BoundingRectangle.A -
+                                             transformedShape.BoundingRectangle.A;
+                                fixedPositions[roomNode] = fixedConfigurationConstraint.Position.Value - offset;
+                            }
+                        }
+                        else
+                        {
+                            // TODO: improve
+                            throw new InvalidOperationException(
+                                $"RoomTemplate must not be null");
+                        }
+                    }
+                }
+            }
+
+            var constraint = new FixedConfigurationConstraint<RoomTemplateInstanceGrid2D, Vector2Int, TRoom>(
+                mapping.Count, fixedShapes, fixedPositions);
+
+            var graph = levelDescriptionMapped.GetGraph();
+            foreach (var room in graph.Vertices)
+            {
+                if (levelDescriptionMapped.GetRoomDescription(room).IsCorridor &&
+                    (constraint.IsFixedPosition(room) || constraint.IsFixedShape(room)))
+                {
+                    var neighbors = graph.GetNeighbors(room);
+
+                    if (neighbors.Any(x => !constraint.IsFixedPosition(x) || !constraint.IsFixedShape(x)))
+                    {
+                        throw new InvalidOperationException(
+                            "When a corridor room has a fixed configuration, all the neighboring rooms must have both fixed positions and shapes.");
+                    }
+                }
+            }
+
+            return constraint;
         }
 
         /// <summary>
@@ -266,7 +309,8 @@ namespace Edgar.GraphBasedGenerator.Grid2D
             return layout;
         }
 
-        private Action<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>> GetEarlyStoppingHandler(DateTime generatorStarted)
+        private Action<Layout<TRoom, ConfigurationGrid2D<TRoom, EnergyData>>> GetEarlyStoppingHandler(
+            DateTime generatorStarted)
         {
             var iterations = 0;
             var cts = new CancellationTokenSource();
@@ -280,12 +324,14 @@ namespace Edgar.GraphBasedGenerator.Grid2D
             {
                 iterations++;
 
-                if (configuration.EarlyStopIfIterationsExceeded.HasValue && iterations > configuration.EarlyStopIfIterationsExceeded)
+                if (configuration.EarlyStopIfIterationsExceeded.HasValue &&
+                    iterations > configuration.EarlyStopIfIterationsExceeded)
                 {
                     cts.Cancel();
                 }
 
-                if (configuration.EarlyStopIfTimeExceeded.HasValue && iterations % 100 == 0 && DateTime.Now - generatorStarted > configuration.EarlyStopIfTimeExceeded)
+                if (configuration.EarlyStopIfTimeExceeded.HasValue && iterations % 100 == 0 &&
+                    DateTime.Now - generatorStarted > configuration.EarlyStopIfTimeExceeded)
                 {
                     cts.Cancel();
                 }

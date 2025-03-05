@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using Edgar.Geometry;
+using Edgar.GraphBasedGenerator.Common.ChainDecomposition;
 using Edgar.Legacy.Core.ChainDecompositions;
 using Edgar.Legacy.Core.Configurations.Interfaces;
 using Edgar.Legacy.Core.LayoutEvolvers.Interfaces;
@@ -19,7 +20,8 @@ namespace Edgar.Legacy.Core.LayoutEvolvers.PlatformersEvolver
     /// <typeparam name="TLayout"></typeparam>
     /// <typeparam name="TNode"></typeparam>
     /// <typeparam name="TConfiguration"></typeparam>
-    public class PlatformersEvolver<TLayout, TNode, TConfiguration> : ILayoutEvolver<TLayout, TNode>, IRandomInjectable, ICancellable
+    public class PlatformersEvolver<TLayout, TNode, TConfiguration> : ILayoutEvolver<TLayout, TNode>, IRandomInjectable,
+        ICancellable
         where TLayout : ILayout<TNode, TConfiguration>, ISmartCloneable<TLayout>
         where TConfiguration : IConfiguration<IntAlias<PolygonGrid2D>, TNode>
     {
@@ -46,7 +48,7 @@ namespace Edgar.Legacy.Core.LayoutEvolvers.PlatformersEvolver
                 {
                     OnPerturbed?.Invoke(this, copy);
                 }
-                
+
                 if (layoutOperations.IsLayoutValid(copy))
                 {
                     // TODO: why chain.Nodes instead of chain?

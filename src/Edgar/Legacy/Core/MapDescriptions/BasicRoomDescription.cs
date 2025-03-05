@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using Edgar.Legacy.Core.MapDescriptions.Interfaces;
-using Newtonsoft.Json;
 
 namespace Edgar.Legacy.Core.MapDescriptions
 {
@@ -21,7 +20,6 @@ namespace Edgar.Legacy.Core.MapDescriptions
         /// </summary>
         public List<RoomTemplate> RoomTemplates { get; }
 
-        [JsonConstructor]
         public BasicRoomDescription(List<RoomTemplate> roomTemplates)
         {
             RoomTemplates = roomTemplates;
